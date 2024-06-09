@@ -1,0 +1,363 @@
+---
+title: "SMI205 Replication Project (2024)"
+author: '220180201'
+date: "08/06/2024"
+output:
+  word_document:
+    toc: true
+    toc_depth: '2'
+  html_document:
+    code_download: true
+    toc: true
+    toc_depth: 2
+    toc_float:
+      collapsed: false
+      smooth_scroll: true
+---
+
+```{r start, include=FALSE}
+# Opening key libraries first
+library(rmarkdown)
+library(knitr)
+```
+
+# Linear regression modeling on Age and how it impacts attitudes towards immigration depending n the amount of Education level taken
+
+### Rpubs link: https://rpubs.com/Hi220180201/1194729
+### GitHub Repository: https://github.com/Lwe22hs/SMI-205-Replication-Project
+### Study Preregistration form: https://rpubs.com/Hi220180201/1194721
+
+## Information about this replication project
+•	This is a replication project based on Ruedin, D. (2020). Do we need multiple questions to capture feeling threatened by immigrants? Political Research Exchange, 2(1), 1758576.  Available at https://doi.org/10.1080/2474736X.2020.1758576
+•	I previously conducted a replication of the paper using the same methods and the same data based on the replication package that was available on the OSF website: https://osf.io/bnftz/?view_only= DOI 10.17605/OSF.IO/BNFTZ
+•	This replication is an extension of the original paper using the same data and different methods to test the robustness
+
+
+## Workspace setup {.tabset .tabset-pills}
+
+### YAML settings
+
+ output: </br>
+  &nbsp; html_document: </br>
+    &nbsp;&nbsp; code_download: true </br>
+    &nbsp;&nbsp;&nbsp; toc: true </br>
+    &nbsp;&nbsp;&nbsp; toc_depth: 2 </br>
+    &nbsp;&nbsp;&nbsp; toc_float: </br>
+      &nbsp;&nbsp;&nbsp;&nbsp; collapsed: false </br>
+      &nbsp;&nbsp;&nbsp;&nbsp; smooth_scroll: true </br>
+
+### Global settings of R chunks
+
+```{r setup, include=TRUE}
+# Global options
+opts_chunk$set(echo=TRUE,
+	             cache=TRUE,
+               comment=NA,
+               message=FALSE,
+               warning=FALSE)
+```
+
+### Libraries
+
+```{r libraries, include=TRUE}
+# All used libraries
+library(tidyverse) #tidyverse
+library(pscl)      # ZINB
+library(arm)       # coefplot
+library(stargazer) # stargazer
+library(psych)     # alpha
+library(reshape2)  # reshape
+library(lme4)      # lmer
+library(brms)      # Stan interface
+library(rstanarm)  # Stan interface
+library(sp)        # plotting maps
+library(rmarkdown) # render("analysis-threat-redux.Rmd")
+library(knitr)     # kable()
+library(arm)# coefplot
+library(dplyr)
+library(ggplot2)
+library(sjPlot) # Tab_model function
+library(haven)
+library(merTools)
+library(lattice)
+library(glmmTMB)
+library(lmerTest)
+```
+
+### Versions of used packages
+
+```{r versions, echo=FALSE}
+# Versions of used packages
+packages <- c("rmarkdown", "knitr")
+names(packages) <- packages
+lapply(packages, packageVersion)
+```
+
+### My enviroment
+
+```{r myR, echo=FALSE}
+# What is my R version?
+version[['version.string']]
+```
+
+## 1. Introduction
+
+Ruedin paper (2020) examines how individuals in Europe are uneasy and feel threatened by immigration. Respondents consistently regard immigrants from other cultures and those more likely to get social benefits as more dangerous. To do so, it examined whether types of immigrants are viewed as more threatening than others, while also emphasising that studies that capture sentiments against immigrants in a generalised a sense properly identify whoever feels most intimidated by and opposes immigration. I previously conducted a replication using the same data and same methods with adjustments to test the papers verifiability, my results supported the outcomes of the original paper. Didier utilised a fine-grained method, he demonstrated that responses to various immigrants change systematically. At the end he states that, correlations among various immigrants are often similar to each other, yet when looking at specific immigrants instead of combining questions, preferences around stereotypes may impact the outcomes. The findings that Didier claimed was the fact that older people are prone to display a more negative view towards immigrants. Given my lack of comprehension on the reason he had made this assertion along with lack of clarification I was interested in investigating this specific claim to determine if what he claimed was accurate or not. Lack of reasons forced me to look up different perspectives on this particular claim and what other researchers had discovered.
+
+Drazanova,2022, had stated that the primary conclusion of our meta-analysis demonstrates that attitudes towards immigration are most closely connected to two individual-level variables: age (in a negative way) and education (in a positive way). People with greater educational backgrounds tend to perceive immigration positively. It additionally observes that the influence of education is not only related to its correlation with income, indicating that it also denotes a divide on the basis of values. On the other hand, attitudes on immigration decrease with age. The anti-immigration attitudes of older respondents are much stronger than those of younger ones. Also, an even deeper relationship to social views has been demonstrated. The findings are consistent when age is taken into account: As older people are less accepting towards immigration then younger indivuals. (Chandler and Tsai, 2001; Citrin, Reingold, and Green,1990; Coenders and Scheepers1998,20008; Espenshade and Calhoun,1993; Ford,2008,2011; Heath and Tilley2005; Heath and Richards,2020; Ramos, Pereira and Vala,2020; and Schlueter, Masso and Davidov,2020 ; Quillian,1995; Paterson,2018; Semyonov, Raijman, and Gorodzeisky,2006).
+
+Research also suggests that attitudes towards immigration could change over time through generational replacement. Although certain analyses show minimal effects of age (Crepaz and Damron, 2009; Scheve and Slaughter, 2001; Van Dalen and Henkens, 2005; Weldon, 2006), age typically has a statistically significant effect on immigration attitudes. Age is typically included in studies of attitudes towards immigration at least as a control variable.
+
+Education plays a crucial role in influencing younger generations to far right ideologies regarding anti-immigration view. The factors behind education's significant impact on attitudes towards immigration, discrimination, and other views like political tolerance are still unclear, but two main theories explain the consequences: (a) exposure to a diversity of ideas and (b) cognitive development ( Coenders and Scheepers, 2003; Espenshade and Calhoun, 1993; Sniderman, Brody, and Kuklinski, 1948; Vogt, 1997). Higher education, for instance, is associated with more self-worth and confidence, as well as a greater appreciation for cultural diversity (Hainmueller and Hiscox, 2007).Thus, a mix of cultural mechanisms and the employment market is probably responsible for the overall effect of schooling on attitudes. As a result, there is a stronger than anticipated positive association between immigration sentiments and education.
+
+-*Hypothesis*: The original replication projected just stated the claim where older people have a negative view on immigration and there wasn't any explanation why that claim was made.I am hoping to prove it as an actual relation
+
+## 2. Data and methods
+
+### 2.1. Data
+
+
+
+The dataset was acknowledged in the article, with a reference pointing to the OSF website. When opening Didier’s main dataset, it didn’t have the control variable and therefore he had to code them in the dataset which I had used named angst. The entire dataset contained 1008 objects and 52 variables; however, in the dataset I utilised, we constructed a separate dataset named rim2, which contained 15027 items and 39 variables. I sub setted out all of the neighbours data so I could concentrate on the bus variables, I had also changed most of the variables so it would be easier reading the tables and graphs .
+
+Value (fear), my dependent variable, was measured on a scale of 1 to 10, with 10 denoting a serious threat, 5–6 denoting a medium-sized threat, and 1 denoting no threat at all. My primary variables, age and education, were divided into separate groups by the independent variable. Since education is categorical, it can be divided into groups according to different educational levels, such as primary vocational training (9 years), high school (12 years), higher vocational college (15 years), and university (18 years).Regarding age, I divided them into three categories: young adults (ages 0-34), middle-aged (ages 35–54), and elderly (ages 55 and above).The other independent variable were my moderator variables Fearful Personality  measured on a 10-point scale, Right-wing ideology measured on a scale from 0-10, Female  measured by sex and lastly Active in labour.
+
+```{r}
+# opening dataset
+load("C:/Users/HP/Desktop/205/SMI-205-Replication-Project/Data/Angst.1.RData")
+```
+
+```{r}
+# Adding all the variables
+# gender (1=female)
+angst$sex[angst$geschlf==1] = 0 # male
+angst$sex[angst$geschlf==2] = 1 # female
+angst$sex = factor(angst$sex)   # nominal
+angst$age = angst$alternum      # age
+# cleaning
+angst$mcp = angst$f4                   # motivation to control prejudice (MCP)
+angst$fear[angst$f2n<11] = angst$f2n[angst$f2n<11] # fearful 1..10; filter out 99
+# Party position on immigration from CHES 2011, recoded 0..10
+angst$party[angst$p02==1] = 3.889   # CSP
+angst$party[angst$p02==2] = 5.556   # CVP
+angst$party[angst$p02==3] = 4.938   # EVP
+angst$party[angst$p02==4] = 6.944   # FDP
+# 5 not occurring
+angst$party[angst$p02==6] = 0.648   # GPS
+angst$party[angst$p02==7] = 3.535   # GLP
+angst$party[angst$p02==8] = 9.012   # Lega
+# 9 not occurring
+angst$party[angst$p02==10] = 1.111  # PdA
+angst$party[angst$p02==11] = 9.833  # SD, from 2004 B&L
+angst$party[angst$p02==12] = 0.463  # SPS
+angst$party[angst$p02==13] = 9.63   # SVP
+# 14 not occurring
+angst$party[angst$p02==15] = 0.648  # Grünes Bündnis; set as GPS
+angst$party[angst$p02==16] = 8.667  # EDU
+angst$party[angst$p02==17] = 6.869  # BDP
+angst$party[angst$p02==18] = 1.111  # AdG; set as PdA
+angst$ideology = angst$party        # duplicate (not elegant), but I often confused them
+angst$party = NULL                  # remove for clearer dataset
+angst$edu[angst$s14a17 < 8] = angst$s14a17[angst$s14a17 < 8] # filter DK; 1..7
+angst$active[angst$s15==1] = 1 # in labour force (erwerbstätig)
+angst$active[angst$s15==2] = 0 # not in labour force
+angst$active = factor(angst$active)   # nominal
+## converting edu into years of schooling:
+angst$educat = angst$edu # keep old, recode (following table 7 in Attitudes I)
+angst$edu[angst$educat == 1] = 7  # none; set to 7 (or less), N=4; not too far of to avoid impact
+angst$edu[angst$educat == 2] = 9  # compulsory school, elementary vocational training
+angst$edu[angst$educat == 3] = 12
+angst$edu[angst$educat == 4] = 12 # general training school, apprenticeship, full-time vocational school, maturity (high school)
+angst$edu[angst$educat == 5] = 15
+angst$edu[angst$educat == 6] = 15 # technical or vocational school; higher vocational college
+angst$edu[angst$educat == 7] = 18 # university
+# sum of all responses with a valid response, -1 so that 0 is the lowest value
+angst$combi = rowSums(cbind(angst$f1_1-1, angst$f1_2-1, angst$f1_3-1, angst$f1_4-1, angst$f1_5-1, angst$f1_6-1, angst$f1_7-1, angst$f1_8-1, angst$f1_9-1, angst$f2_1-1, angst$f2_2-1, angst$f2_3-1, angst$f2_4-1, angst$f2_5-1, angst$f2_6-1, angst$f2_7-1, angst$f2_8-1, angst$f2_9-1, angst$f2_10-1, angst$f2_11-1, angst$f2_12-1, angst$f2_13-1, angst$f2_14-1, angst$f2_15-1), na.rm=TRUE)
+
+
+```
+
+```{r}
+rim2 = melt(angst, measure.vars = c("f2_1", "f2_2", "f2_3", "f2_4", "f2_5", "f2_6", "f2_7", "f2_8", "f2_9", "f2_10", "f2_11", "f2_12", "f2_13", "f2_14", "f2_15"), variable.name = "group", na.rm=TRUE)
+
+
+b1 = lmer(value ~ group + (1 | coderesp), data=rim2)
+b2 = lmer(value ~ group + (1 | coderesp) + edu + mcp + age, data=rim2)
+b3 = lmer(value ~ group + (1 | coderesp) + edu + mcp + age + fear + ideology + sex + active, data=rim2)
+
+  labls = c("Businessman\nFar East", "Businessman\nCross-border", "Craftsman\nBroken German", "Craftsman\nIncomprehensible", "Tourist\nWestern Europe", "Tourist\nFar East", "Jobseeker\nSouth-Eastern Europe", "Jobseeker\nIndia", "Jobseeker\nWestern Europe", "Jobseeker\nAfrica", "Headscarf", "Dark skin", "Portugal\n(trad. guestworker)", "Italy\n(trad. guestworker)")
+ 
+```
+
+```{r}
+# subsetting age into three different categories
+rim2$Agecategory <- cut(rim2$age, 
+                          breaks = c(-Inf
+                                    ,34,54, Inf), 
+                          labels = c("-34", "35-54","55+"),
+                        right = FALSE)
+                        
+                        
+# recoding the categories into age groups
+rim2 <- rim2 %>%
+  mutate(Agegroup = recode(Agecategory,
+                           "-34" = "Young Adults",
+                           "35-54" = "Middle Age",
+                           "55+" = "Elderly"))
+
+rim2 <- rim2%>%
+  mutate(Educationlevel = recode(edu,
+                      "7" = "Compulsory School not completed",
+                "9" = "Compulsory School, elementary vocational training",
+                "12" = "High School",
+                "15" = "Higher vocational college",
+                "18" = "University"))
+
+```
+
+```{r echo=FALSE}
+# graph showing the relationship with how age and the level of education
+# Adding stats
+rim2 %>%
+  count(Agegroup, edu) %>% 
+  group_by(Agegroup) %>%
+  mutate(prop = n / sum(n)) %>%
+ggplot(
+       aes(x = Agegroup, y = edu, fill = as.factor(edu))) +
+  geom_bar(stat = "identity", position = "fill") +
+  geom_text(
+    aes(label = round(100 * prop, digits = 2)), # Adding stats
+            position = position_fill(.5), vjust = -.6) +
+  labs(
+    title = "Education and Age",
+     y = "Years in Education",
+     x = "Age group",
+     fill = "Education Level") +
+   scale_fill_manual(
+     values = c("7" = "light blue", "9" = "yellow", "12" = "light green", "15" = "Purple", "18" = "Pink"),
+     labels = c("7" = "Compulsory School not completed",
+                "9" = "Compulsory School, elementary vocational training",
+                "12" = "High School",
+                "15" = "Higher vocational college",
+                "18" = "University")) +
+   theme_minimal() +
+   theme(legend.position = "right") 
+
+```
+
+```{r echo=FALSE}
+# bar graph showing correlation between Fear and Age Groups
+rim2 %>%
+  count(value, Agegroup) %>% 
+  group_by(value) %>%
+  mutate(prop = n / sum(n)) %>%
+  ggplot(aes(x = value, y = prop, fill = Agegroup)) +
+  geom_col(position = position_dodge()) +
+  geom_text(
+    aes(label = round(100 * prop)),
+            position = position_dodge(.8), vjust = -.2
+  ) +
+  labs(y = "% of fear level")
+
+```
+
+
+### 2.2. Methods
+
+Didier decided to utilise a multivariate regression strategy for the population size in the original research. It is impossible to determine, though, because the paper doesn't adequately describe the variables used in this particular research or provide an explanation for his choice of model. I'm utilising cluster graphs and mixed-effects linear regression, which enable me to use the entire range of variables. Prior to commencing, I employed cluster graphs to ascertain the associations between age and education and their mutual influence. Subsequently, I employed a bar graph to illustrate the relationship between fear (a value) and age groups, as well as to ascertain whether attitudes regarding age vary among various age groups or remain constant.
+
+In the research, a linear regression model was used to assess the dependent variable "value". Data on a range of variables, including age groups and educational achievement, were collected from multiple respondents in order to account for individual variation. In this model fixed effects were used such as age (Young, middle age and Elderly)  categories and education level("Compulsory School not completed, Compulsory School, elementary vocational training, High School, Higher vocational college, University) alongside random intercepts in the model. To evaluate the significant of each predictors, the confidence intervals and p-values were codeded after the coefficients for fixed effects and variances for random effects were evaluated.  The hypothesis's fit was assessed by coding  the variance of the residuals (σ²), the variance of random intercepts (τ00). In addition, the variance explained by fixed factors only and by random as well as fixed effects were measured using the marginal R2 and conditional R2, respectively. This all-encompassing strategy took individual differences into consideration while enabling a thorough knowledge of the factors impacting the dependent variable.
+
+
+
+## 3. Results
+
+The findings of the regression analysis are summarised in the table, which focuses on the influence of different demographic and socioeconomic factors on the dependent variable. The dependent value for the intercept is 1.10 and confidence level from 0.59 to 1.96 while the p value is <0. 001.The dependent variable years of education and self-monitoring(the random intercept is -0.20, the confidence level is -0.29 - -0.11 and there p-value is <0.001 both have a negative-significant effect. While the other dependent variable such as age(the random intercept is 0.01, the confidence level is 0.00 – 0.01 and there p-value = 0.001), fearful personality(the random intercept is 0.14, the confidence level is 0.10 – 0.18 and there p-value is <0.001) and right-wing ideology(the random intercept is 0.06, the confidence level is 0.04 – 0.08 and there p-value is <0.001) both have a positive significant effect which shows that they have a positive association with “value”. Females(the random intercept is 0.13, the confidence level is -0.03 – 0.29 and there p-value = 0.100) have positive but its non-significant and Active inn labour(the random intercept is -0.05, the confidence level is -0.23 – 0.13 and there p-value = 0.563) has a non-significant negative effect.
+
+```{r echo=FALSE}
+# Renaming variables
+names(rim2)[names(rim2) == "edu"] <- "Years_of_education"
+names(rim2)[names(rim2) == "mcp"] <- "Self_monitoring"
+names(rim2)[names(rim2) == "Age"] <- "age"
+names(rim2)[names(rim2) == "fear"] <- "Fearful_personality"
+names(rim2)[names(rim2) == "ideology"] <- "right_wing_ideology"
+names(rim2)[names(rim2) == "sex"] <- "Female"
+names(rim2)[names(rim2) == "active"] <- "Active_in_Labour_Market"
+
+b3 = lmer(value ~ group + (1 | coderesp) + Years_of_education + Self_monitoring + age +  Fearful_personality + right_wing_ideology + Female + Active_in_Labour_Market, data=rim2)
+
+summary(b3)
+tab_model(b3)
+plot_model(b3, transform = NULL,
+           title = "How Threatned you feel with Immigrants",
+  axis.title = c("Estimates","Independant variables"))
+
+```
+This linear model shows the impact of various predictors on the dependent variable “value(fear)”. The intercept estimated at 1.27, and their confidence interval (CI) of 0.22 to 2.32, the p-value is 0.018 which indicates statistically significant. The Age groups shows that the Elderly group (the random intercept is 0.32, the confidence level is -0.06 and there p-value is <0.001) has a positive correlation while the middle age(the random intercept is 0.12, the confidence level is -0.06 to0.30 and there p-value is 0.203)  has no significant correlation. For Education Level there is no statistically significant correlation on the dependent variable: compulsory school(the random intercept is 0.33, the confidence level is -0.73 - 1.40 and there p-value = 0.538), high school (the random intercept is 0.29, the confidence level is -0.76 - 1.33 and there p-value = 0.591), Higher vocational college(the random intercept is 0.22, the confidence level is -0.083 – 1.27 and there p-value = 0.678) and lastly university is(the random intercept is -0.09, the confidence level is -1.14 – 0.96 and there p-value = 0.867)
+
+
+```{r echo=FALSE}
+b4 = lmerTest::lmer(value ~  Educationlevel + Agegroup + (1|coderesp), data=rim2)
+
+summary(b4)
+tab_model(b4)
+plot_model(b4, transform = NULL,
+           title = "How different attitudes vary due to diffrent age groups and how education impacts it ",
+  axis.title = c("Estimates","Independant variables"))
+
+```
+
+
+## 4. Conclusions
+
+**250 words**
+
+My replication study was aimed to see the possible results that would appear from the original replication claim in which Dider stated that older people tend to have a negative view. The results approve the claim he made proving that younger people tend to have a more positive view to immigration compared to older people and education doesn’t not impact people’s attitudes at all.
+
+The result suggested that there are other variables that effect how people see immigration. The results show that political ideology plays a big role on people’s attitudes towards immigration. subsequently is well recognized that, outside of the field of immigration research, individuals build their views on politics based on their attitudes towards several prominent socioeconomic groupings. Future study should investigate the possibility that those social groups could be described in terms of politics in addition to ethnicity or nationality (e.g., Green et al. 2002).
+In conclusion while in this study it claimed older people perceive immigrants negatively, there are other factors that interfere with and education does not play a big part of it
+
+ 
+
+
+## References
+
+**min. 5 scientific references, excluding the replicated paper**
+
+
+Dražanová, L., Gonnot, J., Heidland, T. and Krüger, F., 2024. Which individual-level factors explain public attitudes toward immigration? a meta-analysis. Journal of ethnic and migration studies, 50(2), pp.317-340.
+
+Crepaz, M.M. and Damron, R., 2009. Constructing tolerance: How the welfare state shapes attitudes about immigrants. Comparative Political Studies, 42(3), pp.437-463.
+
+Scheve, K.F. and Slaughter, M.J., 2001. Labor market competition and individual preferences over immigration policy. Review of Economics and Statistics, 83(1), pp.133-145.
+
+van Dalen, H.P. and Henkens, K., 2005. The rationality behind immigration policy preferences. De Economist, 153, pp.67-83.
+
+Weldon, S.A., 2006. The institutional context of tolerance for ethnic minorities: A comparative, multilevel analysis of Western Europe. American journal of political science, 50(2), pp.331-349.
+
+Coenders, M. and Scheepers, P., 2003. The effect of education on nationalism and ethnic exclusionism: An international comparison. Political psychology, 24(2), pp.313-343.
+
+Espenshade, T.J. and Calhoun, C.A., 1993. An analysis of public opinion toward undocumented immigration. Population research and policy review, 12, pp.189-224.
+
+Vogt, Paul W. 1997. Tolerance and Education. Thousand Oaks: Sage.
+
+Sniderman, P.M., Brody, R.A. and Kuklinski, J.H., 1984. Policy reasoning and political values: The problem of racial equality. American journal of political science, pp.75-94.
+
+Hainmueller, J. and Hiscox, M.J., 2007. Educated preferences: Explaining attitudes toward immigration in Europe. International organization, 61(2), pp.399-442.
+	
+Hainmueller, J. and Hopkins, D.J., 2014. Public attitudes toward immigration. Annual review of political science, 17, pp.225-249.
+
+
+## Appendix
+
+### Appendix 1. My enviroment (full information) 
+
+```{r session}
+# Detailed information about my environment
+sessionInfo()
+```
+
+### Appendix 2. Entire R code used in the project
+
+```{r ref.label=knitr::all_labels(), echo=TRUE, eval=FALSE}
+```

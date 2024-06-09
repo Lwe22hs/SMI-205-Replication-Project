@@ -1,0 +1,763 @@
+---
+title: "Threat Paper -- Replication Material"
+author: "Didier Ruedin (University of the Witwatersrand and University of Neuchâtel)"
+date: "24 March 2020"
+output: pdf_document
+---
+
+# Setup
+
+Here I use the 2013 *Swissstaffing* data. The necessary recoding is done at the beginning of this R markdown document.
+
+```{r setup, echo=FALSE, warnings=FALSE, results=FALSE, message=FALSE}
+# LOAD DATA -------------------------------------------------------------------------
+  try(setwd("Analysis"), silent=TRUE)        # GNU
+  try(setwd("Analysis"), silent=TRUE) # Windows
+  load("swissstaffing gfs 2013 Data/Angst.1.RData")   # using raw data in Rdata format
+# LIBRARIES -------------------------------------------------------------------------
+  library(pscl)      # ZINB
+  library(arm)       # coefplot
+  library(stargazer) # stargazer
+  library(psych)     # alpha
+  library(reshape2)  # reshape
+  library(lme4)      # lmer
+  library(brms)      # Stan interface
+  library(rstanarm)  # Stan interface
+  library(sp)        # plotting maps
+  library(rgdal)     # import shapefile
+  library(rmarkdown) # render("analysis-threat-redux.Rmd")
+  library(knitr)     # kable()
+# OPTIONS ---------------------------------------------------------------------------
+  knitr::opts_chunk$set(cache=TRUE, echo=FALSE) # knitr caching
+# RECODING --------------------------------------------------------------------------
+  # gender (1=female)
+  angst$sex[angst$geschlf==1] = 0 # male
+  angst$sex[angst$geschlf==2] = 1 # female
+  angst$sex = factor(angst$sex)   # nominal
+  angst$age = angst$alternum      # age
+  # cleaning
+  angst$mcp = angst$f4                   # motivation to control prejudice (MCP)
+  angst$fear[angst$f2n<11] = angst$f2n[angst$f2n<11] # fearful 1..10; filter out 99
+  # Party position on immigration from CHES 2011, recoded 0..10
+    angst$party[angst$p02==1] = 3.889   # CSP
+    angst$party[angst$p02==2] = 5.556   # CVP
+    angst$party[angst$p02==3] = 4.938   # EVP
+    angst$party[angst$p02==4] = 6.944   # FDP
+    # 5 not occurring
+    angst$party[angst$p02==6] = 0.648   # GPS
+    angst$party[angst$p02==7] = 3.535   # GLP
+    angst$party[angst$p02==8] = 9.012   # Lega
+    # 9 not occurring
+    angst$party[angst$p02==10] = 1.111  # PdA
+    angst$party[angst$p02==11] = 9.833  # SD, from 2004 B&L
+    angst$party[angst$p02==12] = 0.463  # SPS
+    angst$party[angst$p02==13] = 9.63   # SVP
+    # 14 not occurring
+    angst$party[angst$p02==15] = 0.648  # Grünes Bündnis; set as GPS
+    angst$party[angst$p02==16] = 8.667  # EDU
+    angst$party[angst$p02==17] = 6.869  # BDP
+    angst$party[angst$p02==18] = 1.111  # AdG; set as PdA
+    angst$ideology = angst$party        # duplicate (not elegant), but I often confused them
+  angst$party = NULL                  # remove for clearer dataset
+  angst$edu[angst$s14a17 < 8] = angst$s14a17[angst$s14a17 < 8] # filter DK; 1..7
+  angst$active[angst$s15==1] = 1 # in labour force (erwerbstätig)
+  angst$active[angst$s15==2] = 0 # not in labour force
+  angst$active = factor(angst$active)   # nominal
+  ## converting edu into years of schooling:
+  angst$educat = angst$edu # keep old, recode (following table 7 in Attitudes I)
+  angst$edu[angst$educat == 1] = 7  # none; set to 7 (or less), N=4; not too far of to avoid impact
+  angst$edu[angst$educat == 2] = 9  # compulsory school, elementary vocational training
+  angst$edu[angst$educat == 3] = 12
+  angst$edu[angst$educat == 4] = 12 # general training school, apprenticeship, full-time vocational school, maturity (high school)
+  angst$edu[angst$educat == 5] = 15
+  angst$edu[angst$educat == 6] = 15 # technical or vocational school; higher vocational college
+  angst$edu[angst$educat == 7] = 18 # university
+  # sum of all responses with a valid response, -1 so that 0 is the lowest value
+  angst$combi = rowSums(cbind(angst$f1_1-1, angst$f1_2-1, angst$f1_3-1, angst$f1_4-1, angst$f1_5-1, angst$f1_6-1, angst$f1_7-1, angst$f1_8-1, angst$f1_9-1, angst$f2_1-1, angst$f2_2-1, angst$f2_3-1, angst$f2_4-1, angst$f2_5-1, angst$f2_6-1, angst$f2_7-1, angst$f2_8-1, angst$f2_9-1, angst$f2_10-1, angst$f2_11-1, angst$f2_12-1, angst$f2_13-1, angst$f2_14-1, angst$f2_15-1), na.rm=TRUE)
+```
+
+# Question Wording
+
+The survey was held in German and French. The below translations are by the author.
+
+## Introduction to the survey
+
+* We are conducting a short survey on sympathies and fears of the population in relation to people from their neighbourhood or from more distant areas.
+
+## Question block on neighbours
+
+* Suppose in your neighbourhood an apartment becomes vacant. In what follows, several families are mentioned as possible neighbours. Tell me for each family how concerned or threatened you feel. [10 represents a major threat, 5-6 is a medium-sized threat and 1 means no or almost no threat. With the numbers in between you can grade your answers.]
+
+## Question block on bus
+
+* Imagine you take the bus and someone sits down next to you. In what follows, different people are mentioned. Tell me for each person how concerned or threatened you feel.
+
+## Years of education
+
+Typical years of education were derived from a categorical variable on the highest level of education obtained.
+
+* compulsory school not completed $\equiv$ 7 years
+* compulsory school, elementary vocational training $\equiv$ 9 years
+* general training school, apprenticeship, full-time vocational school, maturity (high school) $\equiv$ 12 years
+* technical or vocational school; higher vocational college $\equiv$ 15 years
+* university $\equiv$ 18 years.
+
+## Self-monitoring
+
+* I try to approach others without prejudice, because this is important to me personally. [strongly agree / agree to / neither / disagree / strongly disagree]
+
+## Gender
+
+* male (reference)
+* female
+
+## Ideology
+
+* Which party corresponds most -- in its objectives and demands -- with your own views and wishes?
+
+On the basis of the party mentioned, party positions on immigration and integration were allocated based on the CHES 2011 (corresponds to the last national election before the survey).
+
+
+# Description of the Responses
+
+This section presents the distribution of answers, questions on neighbours and questions on the bus separately.
+
+```{r mean-reponse}
+  allcom = cbind(angst$f1_1, angst$f1_2, angst$f1_3, angst$f1_4, angst$f1_5, angst$f1_6, angst$f1_7, angst$f1_8, angst$f1_9, angst$f2_1, angst$f2_2, angst$f2_3, angst$f2_4, angst$f2_5, angst$f2_6, angst$f2_7, angst$f2_8, angst$f2_9, angst$f2_10, angst$f2_11, angst$f2_12, angst$f2_13, angst$f2_14, angst$f2_15)
+```
+
+The mean across all questions (Roma not included because the Roma question was designed as a manipulation check): `r round(mean(allcom, na.rm=TRUE), 3)`.
+
+## No Threat Reported
+
+Some respondents report no threat at all. In this table, `TRUE` is the percentage of respondents indicating no threat to all questions, and `FALSE` indicates at least some threat indicated in some questions. This number is reported in the text.
+
+```{r no-threat}
+  # the responses are captured on a scale starting with 1
+  # so I reduce the values by 1, and then simply take the sum
+  # if no threat is reported, this sum is 0
+  kable(round(prop.table(table(rowSums(allcom - 1, na.rm=TRUE) == 0)) * 100, 1))
+```
+
+## Mean and Distribution for each Group
+
+Mean and standard deviation of threat indicated by group. Here the questions are first on neighbours (1:9) and then on the bus (remainder). This is for the appendix.
+
+Mean threat:
+
+```{r mean-threat}
+  round(colMeans(allcom, na.rm=TRUE), 2)
+```
+
+Standard deviations:
+
+```{r stdev-threat}
+  round(sapply(1:24, function(x){sd(allcom[,x], na.rm=TRUE)}), 2)
+```
+
+**Manipulation check:** The mean for the Roma question is `r round(mean(angst$f2_16, na.rm=TRUE), 2)`; the standard deviation for the Roma question is `r round(sd(angst$f2_16, na.rm=TRUE), 2)`. This is about the manipulation check and reported in the text.
+
+Here are the kernel distributions with the mean indicated as a vertical line, because the mean and standard deviations do not tell us everything about the distribution of the responses.
+
+Neighbours:
+
+```{r neighbours-figure, results=FALSE}
+  attach(angst) # much easier for the loop
+  old.par = par(no.readonly=TRUE) # save defaults
+  lbl = c("Internal, high skills", "Internal, low skills", "Internal, benefits", "Europe, high skills", "Europe, low skills", "Europe, benefits", "SEE, high skills", "SEE, low skills", "SEE, benefits")
+  par(mfrow = c(3, 3), pty = "s", mar = c(3,3,3,3))   # "s" = square plotting region (anywhere)
+    for(i in 1:9){
+      plot(density(na.omit(get(paste("f1_",i, sep=""))), bw=0.35), bty="n", xlim=c(0,4), ylim=c(0,1.2), main=lbl[i], xlab="", ylab="")
+        abline(v=mean(get(paste("f1_",i, sep="")), na.rm=TRUE), lty=2, lwd=1.5)
+        text(mean(get(paste("f1_",i, sep="")), na.rm=TRUE), 1.1, round(mean(get(paste("f1_",i, sep="")), na.rm=TRUE), 2), pos=4)
+    }
+  par(old.par) # restore default par
+  detach(angst)
+  #savePlot("kernelTable1.png")
+```
+
+## Mean across Skills and Origin
+
+Mean across skills (high, low, previous benefits) and origin (Switzerland, Western Europe, SEE Europe):
+
+Indicator                            Mean
+-----------------------------------  ---------------------------------------
+high skills                          `r round(mean(cbind(angst$f1_1, angst$f1_4, angst$f1_7), na.rm=TRUE), 2)`
+low skills                           `r round(mean(cbind(angst$f1_2, angst$f1_5, angst$f1_8), na.rm=TRUE), 2)`
+benefits                             `r round(mean(cbind(angst$f1_3, angst$f1_6, angst$f1_9), na.rm=TRUE), 2)`
+Switzerland (internal)               `r round(mean(cbind(angst$f1_1, angst$f1_2, angst$f1_3), na.rm=TRUE), 2)`
+Western Europe (international)       `r round(mean(cbind(angst$f1_4, angst$f1_5, angst$f1_6), na.rm=TRUE), 2)`
+SEE Europe                           `r round(mean(cbind(angst$f1_7, angst$f1_8, angst$f1_9), na.rm=TRUE), 2)`
+
+Kernel distributions for the bus question (as above):
+
+```{r bus-figure, results=FALSE, message=FALSE}
+  attach(angst)
+  old.par = par(no.readonly=TRUE) # save defaults
+  grp = c(3, 1, 2, NA, NA, 6, 7, NA, NA, 10, 9, 11)
+  lbl = c("Cross-border", "Business EU", "Business Asia", "", "", "Tourist EU", "Tourist Asia", "", "", "Job EU", "Job Asia", "Job SEE")
+  par(mfrow = c(3, 4), pty = "s", mar = c(2,2,2,2))   # "s" = square plotting region (anywhere)
+    for(i in 1:12){
+      if(is.na(grp[i])) plot(0, type="n", ann=FALSE, axes=FALSE)
+      if(!is.na(grp[i])) {plot(density(na.omit(get(paste("f2_",grp[i], sep=""))), bw=0.35), bty="n", xlim=c(0,4), ylim=c(0,1.2), main=lbl[i], xlab="", ylab=""); abline(v=mean(get(paste("f2_",grp[i], sep="")), na.rm=TRUE), lty=2, lwd=1.5)}
+    }
+  par(old.par) # restore default par
+  detach(angst)
+  # savePlot("kernelTableBus.png")
+```
+
+## Cross-Border Workers
+
+Cross-border worker by canton. First we look at the mean response to cross-border worker in the 'classic' border cantons (GE, JU, BS), compared to the mean response to cross-border workers in all other cantons. This is reported in the text.
+
+```{r xborder}
+  # PLZ to canton script
+  source("../../plz.R") # same place as data
+  canton = sapply(angst$plz, plzcanton, format=2) # with strings
+  bordercanton = NA
+  bordercanton[canton %in% c("GE", "JU", "BS")] = 1
+  bordercanton[!canton %in% c("GE", "JU", "BS")] = 0
+  tabxc = aggregate(angst$f2_3, by=list(bordercanton), mean, na.rm=TRUE)
+  colnames(tabxc) = c("Cross-border canton", "Mean threat (cross-border workers)")
+  tabxc[,1] = c("No", "Yes")
+  kable(tabxc, digits=2)
+```
+
+Second, we plot the mean values by canton (cross-border workers) on the map for a more geographic view (the canton of Ticino was not covered by the survey):
+
+```{r xborder-map, eval=TRUE, warnings=FALSE, results=FALSE, fig.height=3, fig.width=5}
+  # Maps with my modified Shapefile for Swiss Cantons
+  x = readOGR(dsn = ".", layer = "ch-cantons")
+  data = c(1.380282, 1.200000, 3.500000, 1.571429, 1.107143, 1.625000, 1.354839, 1.500000, 2.333333, 1.933333, 1.428571, 2.063830, 1.647059, 1.333333, 1, 1.467742, 2,  2.277778, 1.877193, 1.170732, NA, 1.500000, 1.613636, 1.516129,  1.517766, 1.733333)  # values I want to plot, manually here to get the order correct (much easier); the numbers were generated using: aggregate(angst$f2_3, by=list(canton), mean, na.rm=TRUE)
+  x$data = data # add the data to the SpatialPolygonsDataFrame
+  col = rev(heat.colors(26)) # define colours; rev to reverse (darker = higher)
+  spplot(x, "data", col.regions=col, main="", colorkey=TRUE) # plot = create map; col.regions for the filling, colorkey for the legend (colorkey=FALSE to hide legend)
+```
+
+# Vignette-Style Analysis
+
+## Neighbours
+
+The coefficient plot shows the coefficients for the groups (not the control variables), once for a model without control variables, and once with the full set of control variables (but the smaller number of observations). The regression table also presents a model with key control variables, where few cases are dropped because of missingness. Missigness on the `ideology` variable reduces the number of observations substantially. The models are random intercept, fixed predictor in individual level.
+
+```{r conventional-vignettes-neighbours, fig.width=6, fig.height=4}
+  # getting the data into shape for the vignette-style analysis, using the neighbours questions:
+  rim1 = melt(angst, measure.vars = c("f1_1", "f1_2", "f1_3", "f1_4", "f1_5", "f1_6", "f1_7", "f1_8", "f1_9"), variable.name = "group", na.rm=TRUE)
+  # responses nested in respondents (respondent fixed effects)
+  v1 = lmer(value ~ group + (1 | coderesp), data=rim1)
+  v2 = lmer(value ~ group + (1 | coderesp) + edu + mcp + age, data=rim1)
+  v3 = lmer(value ~ group + (1 | coderesp) + edu + mcp + age + fear + ideology + sex + active, data=rim1)
+  # extracting coefficients and standard errors for coefficient plot
+  cv1 = summary(v1)$coefficients
+  ev1 = cv1[2:9, 1] # coefficients for the groups, not including the intercept
+  sv1 = cv1[2:9, 2] # standard errors for the groups
+  cv2 = summary(v2)$coefficients
+  ev2 = cv2[2:9, 1] # coefficients for the groups, not including the intercept
+  sv2 = cv2[2:9, 2] # standard errors for the groups
+  cv3 = summary(v3)$coefficients
+  ev3 = cv3[2:9, 1] # coefficients for the groups, not including the intercept
+  sv3 = cv3[2:9, 2] # standard errors for the groups
+  labls = c("Swiss\nLow skilled", "Swiss\nBenefits", "Western Europe\nHighly skilled", "Western Europe\nLow skilled", "Western Europe\nBenefits", "South-Eastern Europe\nHighly Skilled", "South-Eastern Europe\nLow skilled", "South-Eastern Europe\nBenefits") #, "Education", "Self-monitoring", "Age", "Fearful", "Ideology", "Gender", "Active in LM")
+  par(mar=c(2,8,2,2))
+  arm::coefplot(rev(ev3), rev(sv3), varnames=rev(labls), main="Perceived Threat (Ref. H. Skilled Swiss Neighbour)", col="blue", xlim=c(-0.05, 1.4))
+  arm::coefplot(rev(ev1), rev(sv1), col="red", varnames=labls, add=TRUE)
+  par(old.par) # restore default par
+```
+
+```{r vig_tab1}
+  stargazer(v1, v2, v3, type="text", font.size="tiny", single.row=TRUE, ci=FALSE)
+```
+
+The coefficients in blue are from the model that includes control varibales.
+
+## Bus
+
+The coefficient plot shows the coefficients for the groups (not the control variables), once for a model without control variables, and once with the full set of control variables (but the smaller number of observations). The regression table also presents a model with key control variables, where few cases are dropped because of missingness. Missigness on the `ideology` variable reduces the number of observations substantially. The models are random intercept, fixed predictor in individual level.
+
+```{r conventional-vignettes-bus, fig.width=6, fig.height=4}
+  rim2 = melt(angst, measure.vars = c("f2_1", "f2_2", "f2_3", "f2_4", "f2_5", "f2_6", "f2_7", "f2_8", "f2_9", "f2_10", "f2_11", "f2_12", "f2_13", "f2_14", "f2_15"), variable.name = "group", na.rm=TRUE)
+  b1 = lmer(value ~ group + (1 | coderesp), data=rim2)
+  b2 = lmer(value ~ group + (1 | coderesp) + edu + mcp + age, data=rim2)
+  b3 = lmer(value ~ group + (1 | coderesp) + edu + mcp + age + fear + ideology + sex + active, data=rim2)
+  labls = c("Businessman\nFar East", "Businessman\nCross-border", "Craftsman\nBroken German", "Craftsman\nIncomprehensible", "Tourist\nWestern Europe", "Tourist\nFar East", "Jobseeker\nSouth-Eastern Europe", "Jobseeker\nIndia", "Jobseeker\nWestern Europe", "Jobseeker\nAfrica", "Headscarf", "Dark skin", "Portugal\n(trad. guestworker)", "Italy\n(trad. guestworker)") #, "Education", "Self-monitoring", "Age")
+  # extracting coefficients and standard errors for coefficient plot
+  cb1 = summary(b1)$coefficients
+  eb1 = cb1[2:15, 1] # coefficients for the groups, not including the intercept
+  sb1 = cb1[2:15, 2] # standard errors for the groups
+  cb2 = summary(b2)$coefficients
+  eb2 = cb2[2:15, 1] # coefficients for the groups, not including the intercept
+  sb2 = cb2[2:15, 2] # standard errors for the groups
+  cb3 = summary(b3)$coefficients
+  eb3 = cb3[2:15, 1] # coefficients for the groups, not including the intercept
+  sb3 = cb3[2:15, 2] # standard errors for the groups
+  par(mar=c(2,8,2,2))
+  arm::coefplot(rev(eb3), rev(sb3), varnames=rev(labls), main="Perceived Threat (Ref. W. Eur. Businessman)", col="blue", xlim=c(-0.2, 1.1))
+  arm::coefplot(rev(eb1), rev(sb1), col="red", varnames=labls, add=TRUE)
+  par(old.par) # restore default par
+```
+
+```{r regvig2}
+  stargazer(b1, b2, b3, type="text", font.size="tiny", single.row=TRUE, ci=FALSE)
+```
+
+The coefficients in blue are from the model that includes control varibales.
+
+This table demonstrates that there are no substantive difference when the manipulation check (Roma beggar) is included in the model. Left without the manipulation check (as above), right with the manipulation check (`f2_16`).
+
+```{r conventional-vignettes-bus-incl-roma, fig.width=8, fig.height=6}
+  rim2r = melt(angst, measure.vars = c("f2_1", "f2_2", "f2_3", "f2_4", "f2_5", "f2_6", "f2_7", "f2_8", "f2_9", "f2_10", "f2_11", "f2_12", "f2_13", "f2_14", "f2_15", "f2_16"), variable.name = "group", na.rm=TRUE)
+  b3r = lmer(value ~ group + (1 | coderesp) + edu + mcp + age + fear + ideology + sex + active, data=rim2r)
+  stargazer(b3, b3r, type="text", font.size="tiny", single.row=TRUE, ci=FALSE)
+```
+
+Here all groups are combined: neighbours and bus, in a single model. The modelling strategy is oterwise the same as above.
+
+```{r conventional-vignettes-combined, fig.width=8, fig.height=6}
+  rim3 = melt(angst, measure.vars = c("f1_1", "f1_2", "f1_3", "f1_4", "f1_5", "f1_6", "f1_7", "f1_8", "f1_9", "f2_1", "f2_2", "f2_3", "f2_4", "f2_5", "f2_6", "f2_7", "f2_8", "f2_9", "f2_10", "f2_11", "f2_12", "f2_13", "f2_14", "f2_15"), variable.name = "group", na.rm=TRUE)
+  a1 = lmer(value ~ group + (1 | coderesp), data=rim3)
+  a2 = lmer(value ~ group + (1 | coderesp) + edu + mcp + age, data=rim3)
+  a3 = lmer(value ~ group + (1 | coderesp) + edu + mcp + age + fear + ideology + sex + active, data=rim3)
+  stargazer(a1, a2, a3, type="text", font.size="tiny", single.row=TRUE, ci=FALSE)
+```
+
+The coefficients in blue are from the model that includes control varibales.
+
+# Bayesian in `brms`
+
+Same analysis in `brms`; the default priors (flat over the range of values in the data, uniformative) are OK for this. Models checked in `shinystan`.
+
+## Neighbours
+
+```{r bayesian-vignettes-3, results=FALSE, message=FALSE, warning=FALSE}
+  n1 = brm(value ~ group + (1 | coderesp), data=rim1)
+```
+
+```{r bayesian-vignettes-4, results=FALSE, message=FALSE, warning=FALSE}
+  n3 = brm(value ~ group + (1 | coderesp) + edu + mcp + age + fear + ideology + sex + active, data=rim1)
+```
+
+'Population-level effects':
+
+```{r bayesian-results}
+  kable(summary(n1)$fixed, digits=2)
+  kable(summary(n3)$fixed, digits=2)
+```
+
+For all models: 4 chains, each with iter = 2000, warmup = 1000, total post-warmup samples = 4000. Samples were drawn using NUTS
+
+Coefficient plot, using mean and 95% credibility interval from `brms`.
+
+```{r}
+  n1t = summary(n1)$fixed
+  n1c = n1t[2:9,1]
+  n1s = n1t[2:9,2]
+  n3t = summary(n3)$fixed
+  n3c = n3t[2:9,1]
+  n3s = n3t[2:9,2]
+  labls = c("Swiss\nLow skilled", "Swiss\nBenefits", "Western Europe\nHighly skilled", "Western Europe\nLow skilled", "Western Europe\nBenefits", "South-Eastern Europe\nHighly Skilled", "South-Eastern Europe\nLow skilled", "South-Eastern Europe\nBenefits") #, "Education", "Self-monitoring", "Age", "Fearful", "Ideology", "Gender", "Active in LM")
+  # tiff(file="fig1.tif", width = 5, height = 5, units = "in", pointsize = 10, compression = "lzw", bg = "white", res = 300)
+  par(mar=c(2,8,2,2))
+  # coefplot(rev(n3c), rev(n3s), varnames=rev(labls), col="darkgrey", xlim=c(-0.05, 1.4), main="") # no heading in figure
+  coefplot(rev(n3c), rev(n3s), varnames=rev(labls), col="darkgrey", xlim=c(-0.05, 1.4), main="Perceived Threat (Ref. Highly Skilled Swiss Neighbour)")
+  coefplot(rev(n1c), rev(n1s), col="black", add=TRUE)
+  par(old.par) # restore default par
+  # dev.off()
+```
+
+## Bus
+
+```{r bayesian-vignettes-1, results=FALSE, message=FALSE, warning=FALSE}
+  m1 = brm(value ~ group + (1 | coderesp), data=rim2)
+```
+
+```{r bayesian-vignettes-2, results=FALSE, message=FALSE, warning=FALSE}
+  m3 = brm(value ~ group + (1 | coderesp) + edu + mcp + age + fear + ideology + sex + active, data=rim2)
+```
+
+```{r bayesian-results-bus}
+  kable(summary(m1)$fixed, digits=2)
+  kable(summary(m3)$fixed, digits=2)
+```
+
+Coefficient plot, using mean and 95% credibility interval from `brms`
+
+```{r}
+  m1t = summary(m1)$fixed
+  m1c = m1t[2:15,1]
+  m1s = m1t[2:15,2]
+  m3t = summary(m3)$fixed
+  m3c = m3t[2:15,1]
+  m3s = m3t[2:15,2]
+  labls = c("Businessman\nFar East", "Businessman\nCross-border", "Craftsman\nBroken German", "Craftsman\nIncomprehensible", "Tourist\nWestern Europe", "Tourist\nFar East", "Jobseeker\nSouth-Eastern Europe", "Jobseeker\nIndia", "Jobseeker\nWestern Europe", "Jobseeker\nAfrica", "Headscarf", "Dark skin", "Portugal\n(trad. guestworker)", "Italy\n(trad. guestworker)") #, "Education", "Self-monitoring", "Age")
+  # tiff(file="fig2.tif", width = 5, height = 5, units = "in", pointsize = 10, compression = "lzw", bg = "white", res = 300)
+  par(mar=c(2,8,2,2))
+  # coefplot(rev(m3c), rev(m3s), varnames=rev(labls), main="", col="darkgrey", xlim=c(-0.2, 1.1))
+  coefplot(rev(m3c), rev(m3s), varnames=rev(labls), main="Perceived Threat (Ref. Western European Businessman)", col="blue", xlim=c(-0.2, 1.1))
+  coefplot(rev(m1c), rev(m1s), col="black", add=TRUE)
+  par(old.par) # restore default par
+  # dev.off()
+```
+
+# EXPLORATIVE FACTOR ANALYSIS
+
+## ARE THESE GOOD SCALES?
+
+Cronbach’s $\alpha$ for: all combined, neighbours, bus. These tests are widely used in the political sciences, so I cite them.
+
+```{r alpha, warnings=FALSE, result=FALSE, message=FALSE}
+  attach(angst) # easier code
+  # Cronbach's alpha [all]
+  ca_all = round(psych::alpha(data.frame(f1_1, f1_2, f1_3, f1_4, f1_5, f1_6, f1_7, f1_8, f1_9, f2_1, f2_2, f2_3, f2_4, f2_5, f2_6, f2_7, f2_8, f2_9, f2_10, f2_11, f2_12, f2_13, f2_14, f2_15), na.rm=TRUE)$total$std.alpha,2)
+    # =>= alpha of 0.96 (combined)
+  # separately:
+  ca_nei = round(psych::alpha(data.frame(f1_1, f1_2, f1_3, f1_4, f1_5, f1_6, f1_7, f1_8, f1_9), na.rm=TRUE)$total$std.alpha,2)
+    # =>= alpha of 0.92 (neighbours)
+  ca_bus = round(psych::alpha(data.frame(f2_1, f2_2, f2_3, f2_4, f2_5, f2_6, f2_7, f2_8, f2_9, f2_10, f2_11, f2_12, f2_13, f2_14, f2_15), na.rm=TRUE)$total$std.alpha,2)
+    # =>= alpha of 0.95 (bus)
+  tab = cbind(ca_all, ca_nei, ca_bus)
+  colnames(tab) = c("Combined", "Neithbours", "Bus")
+  kable(tab)
+  detach(angst)
+```
+
+## VSS & PCA
+
+VSS and PCA constitute different approaches to identifying the 'best' number of dimensions. With the relatively large sample, the results from the PCA should resemble those of the EFA.
+
+```{r pca, warnings=FALSE}
+  attach(angst)
+  x = data.frame(f1_1,f1_2,f1_3,f1_4,f1_5,f1_6,f1_7,f1_8,f1_9,f2_1,f2_2,f2_3,f2_4,f2_5,f2_6,f2_7,f2_8,f2_9,f2_10,f2_11,f2_12,f2_13,f2_14,f2_15)
+  Variable = c("Swiss, high", "Swiss, low", "Swiss, benefit", "EU, high", "EU, low", "EU, benefit", "SEE, high", "SEE, low", "SEE, benefit", "Business, EU", "Business, Far East", "Business, X-border", "Craftsman, broken German", "Craftsman, incomprehensible", "Tourist, EU", "Tourist, Far East", "SEE, job-seeker", "India, job-seeker", "EU, job-seeker", "Africa, job-seeker", "Headscarf", "Dark skin", "Portugal", "Italy")
+  # how many factors to extract?
+  vss(x, plot=FALSE)
+  # =>= Velicer MAP criterion minimum at 3 factors
+  # =>= VSS complexity 1 max at 0.93 with 1 factor, complexity 2 max at 0.96 with 2 factors
+  # qi = princomp(na.omit(x))
+  # print(qi$loadings)
+  # plot(qi)
+  # nearly 30% variance explained by factor 1, factors 2 & 3 add some 5;
+  # more dimensions add only a negligible amount of the variance explained
+    ## scree(x)
+  # one factor clealy; 2 more potentially with Eigenvalues > 1, but the "elbow" is after 1 factor
+  p1 = principal(x)
+  # p2 = principal(x, nfactors=2)
+  p1.load = round(p1$loadings[,1],3) # [,1:2]
+  # PLOT OF PCA LOADINGS -- NO LONGER USED
+  # png(file="factor-loading.png", width = 23.5, height = 12.5, units = "cm", pointsize = 12, bg = "white", res=300)
+    ##   plot(p1.load, ylim=c(0,1), type="s", ylab="Factor Loading", xlab="", axes=FALSE, lwd=2)
+    ## segments(24, p1.load[24], 25, p1.load[24], lwd=2) # because of type="s", the last point does not extend
+    ##   axis(2)
+    # axis(1, at=1:25, labels=c(1:9, 1:16), lty=0, cex.axis=.8)
+   ##    abline(h=.4, lty=2)
+    # abline(v=9, lty=3)
+    ##   mov = 0.05 # position of lines
+    ##   text(5, mov, "Neighbours")
+    ##   text(17, mov, "Bus")
+    ##   labls = c(1:9, 1:16)
+    ##   for(i in 1:24){
+    ##    text(i, 0, labls[i])
+    ##   }
+    ##   segments(1, mov, 2.8, mov); segments(7.2, mov, 9, mov)
+    ##   segments(10, mov, 16, mov); segments(18, mov, 25, mov)
+    # savePlot("factor-loadings.png")
+  #dev.off()
+  detach(angst)
+```
+
+PCA
+
+```{r pca_load}
+  kable(t(p1.load[1:9]))
+  kable(t(p1.load[10:24]))
+```
+
+## EXPLORATORY FACTOR ANALYSIS
+
+Here comes the conventional factor analysis, extracting two factors (for the figure), and comparing this to the 'solutions' with 1 and 3 factors extracted. I do not have sufficient theoretical reason to attempt a *confirmatory* factor analysis.
+
+```{r two-factors, warnings=FALSE, result=FALSE, message=FALSE}
+  attach(angst)
+    # 2 FACTORS (so we can see something)
+      f2 = factanal(na.omit(x), 2, rotation="varimax") # N=2 factors
+      print(f2, digits=2, cutoff=.3, sort=TRUE)
+      # plot factor 1 by factor 2
+      f2.load = f2$loadings[,1:2]
+      plot(f2.load, type="n", bty="n", xlab="Factor 1", ylab="Factor 2") # set up plot
+      text(f2.load, labels=Variable, cex=.7) # add variable names
+      # =>= it really is mostly one factor
+    # 1 FACTOR
+      f3 = factanal(na.omit(x), 1, rotation="varimax") # N=1 factors
+      print(f3, digits=2, cutoff=.3, sort=TRUE)
+      round(min(f3$loadings), 3) # 0.468
+    # 3 FACTORS
+      f4 = factanal(na.omit(x), 3, rotation="varimax") # N=3 factors
+      print(f4, digits=2, cutoff=.3, sort=TRUE)
+      round(min(f4$loadings), 3) # 0.009
+  detach(angst)
+```
+
+The interpretation of a single factor seems most appropriate here. With two factors, we really seem to get a single dimension (substantively): from Swiss (low), to African job seeker (high) -- see figure. Disregarding the figure, the two-factor 'solution' separates the question on neighbours and on the bus; with three factors, we get the bus question, SEE neighbours, and Swiss/Western-European neighbours.
+
+Additional analysis with the `fa` function in the library `psych`
+
+```{r psych_fa}
+  # 2 FACTOR SOLUTION (so that we can see something)
+  f2p = psych::fa(na.omit(x), 2) # N=2 factors
+  print(f2p, digits=2, cutoff=.3, sort=TRUE)
+  # plot factor 1 by factor 2
+  f2p.load = f2p$loadings[,1:2]
+  plot(f2p.load, type="n", bty="n") # set up plot
+  text(f2p.load, labels=Variable, cex=.7) # add variable names
+  # =>= it really is mostly one factor
+  # 1 FACTOR
+  f3p = psych::fa(na.omit(x), 1) # N=1 factors
+  print(f3p, digits=2, cutoff=.3, sort=TRUE)
+  round(min(f3p$loadings), 3) # 0.516
+  # 3 FACTORS
+  f4p = psych::fa(na.omit(x), 3) # N=3 factors
+  print(f4p, digits=2, cutoff=.3, sort=TRUE)
+  round(min(f4p$loadings), 3)
+  # 4 FACTORS
+  f5p = psych::fa(na.omit(x), 4) # N=4 factors
+  print(f5p, digits=2, cutoff=.3, sort=TRUE)
+  round(min(f5p$loadings), 3)
+```
+
+Factor congruence (known as the 'Tucker index'). Degree of congruence (vector cosine) between two sets of factor loadings. The table shows the percentage of factor 1 that are the same when comparing solutions with different numbers of factors.
+
+```{r factor_congruence_table}
+  fc12 = factor.congruence(f3p, f2p)[1] ## 1 and 2 factor solutions: 90% of factor 1 are the same
+  fc13 = factor.congruence(f4p, f2p)[1] ## 1 and 3 factor solutions: 98% of factor 1 are the same
+  fc14 = factor.congruence(f5p, f2p)[2] ## 1 and 4 factor solutions: 82% of factor 1 are the same
+  tab = data.frame(fc12, fc13, fc14)
+  colnames(tab) = c("1 and 2", "1 and 3", "1 and 4")
+  kable(tab)
+```
+
+# Predicting Threat in Regression Analysis
+
+## Scale with all responses as outcome variable
+
+These are zero-inflated negative binomial (ZINB) models, where we use self-monitoring to predict whether any threat is reported at all in stage 1. The outcome variable is a scale that combined all questions (neighbours, bus), and the predictor variable correspond to the models above (vignette style).
+
+* Left column is in Table A5, and repeated in Table A6 for convenience.
+* Right column is in Table A7, and repeated in Table A8 for convenience.
+
+```{r zinb_models}
+  zi_base = zeroinfl(combi ~ edu + mcp + age | mcp, data=angst, dist = "negbin", EM = TRUE)
+  zi_ext = zeroinfl(combi ~ edu + mcp + age + fear + ideology + sex + active | mcp, data=angst, dist = "negbin", EM = TRUE)
+  stargazer(zi_base, zi_ext, type="text", font.size="tiny", single.row=TRUE, ci=FALSE)
+```
+
+#### OLS
+
+* The left column is in Table A5b; the right column is not reported in the article.
+
+```{r ols-models}
+  ols_base = lm(combi ~ edu + mcp + age, data=angst)
+  ols_ext  = lm(combi ~ edu + mcp + age + fear + ideology + sex + active, data=angst)
+  stargazer(ols_base, ols_ext, type="text", font.size="tiny", single.row=TRUE, ci=FALSE)
+```
+
+## Each neighbour as a separate outcome variables
+
+Here I use separate outcome variables rather than combining them. The models are otherwise the same. There are ZINB models with the main variables, and extended models with additional variables, as well as OLS models with the main variables.
+
+### Table A5
+
+```{r szinb_sep_neig}
+  szi_11 = zeroinfl(f1_1-1 ~ edu + mcp + age | mcp, data=angst, dist = "negbin", EM = TRUE)
+  szi_12 = zeroinfl(f1_2-1 ~ edu + mcp + age | mcp, data=angst, dist = "negbin", EM = TRUE)
+  szi_13 = zeroinfl(f1_3-1 ~ edu + mcp + age | mcp, data=angst, dist = "negbin", EM = TRUE)
+  szi_14 = zeroinfl(f1_4-1 ~ edu + mcp + age | mcp, data=angst, dist = "negbin", EM = TRUE)
+  szi_15 = zeroinfl(f1_5-1 ~ edu + mcp + age | mcp, data=angst, dist = "negbin", EM = TRUE)
+  szi_16 = zeroinfl(f1_6-1 ~ edu + mcp + age | mcp, data=angst, dist = "negbin", EM = TRUE)
+  szi_17 = zeroinfl(f1_7-1 ~ edu + mcp + age | mcp, data=angst, dist = "negbin", EM = TRUE)
+  szi_18 = zeroinfl(f1_8-1 ~ edu + mcp + age | mcp, data=angst, dist = "negbin", EM = TRUE)
+  szi_19 = zeroinfl(f1_9-1 ~ edu + mcp + age | mcp, data=angst, dist = "negbin", EM = TRUE)
+  # stargazer(szi_11, szi_12, szi_13, szi_14, szi_15, szi_16, szi_17, szi_18, szi_19, type="text", font.size="tiny")
+  stargazer(szi_14, szi_15, szi_16, szi_17, szi_18, szi_19, type="text", font.size="tiny")
+```
+
+#### OLS
+
+* This is Table A5b.
+
+```{r sols_sep_neig}
+  sols_11 = lm(f1_1 ~ edu + mcp + age, data=angst)
+  sols_12 = lm(f1_2 ~ edu + mcp + age, data=angst)
+  sols_13 = lm(f1_3 ~ edu + mcp + age, data=angst)
+  sols_14 = lm(f1_4 ~ edu + mcp + age, data=angst)
+  sols_15 = lm(f1_5 ~ edu + mcp + age, data=angst)
+  sols_16 = lm(f1_6 ~ edu + mcp + age, data=angst)
+  sols_17 = lm(f1_7 ~ edu + mcp + age, data=angst)
+  sols_18 = lm(f1_8 ~ edu + mcp + age, data=angst)
+  sols_19 = lm(f1_9 ~ edu + mcp + age, data=angst)
+  # stargazer(sols_11, sols_12, sols_13, sols_14, sols_15, sols_16, sols_17, sols_18, sols_19, type="text", font.size="tiny")
+  stargazer(sols_14, sols_15, sols_16, sols_17, sols_18, sols_19, type="text", font.size="tiny",  omit.stat=c("f", "ser"))
+```
+
+### Table A6
+
+```{r szinb_sep_bus1}
+  szi_21 = zeroinfl(f2_1-1 ~ edu + mcp + age | mcp, data=angst, dist = "negbin", EM = TRUE)
+  szi_22 = zeroinfl(f2_2-1 ~ edu + mcp + age | mcp, data=angst, dist = "negbin", EM = TRUE)
+  szi_23 = zeroinfl(f2_3-1 ~ edu + mcp + age | mcp, data=angst, dist = "negbin", EM = TRUE)
+  szi_24 = zeroinfl(f2_4-1 ~ edu + mcp + age | mcp, data=angst, dist = "negbin", EM = TRUE)
+  szi_25 = zeroinfl(f2_5-1 ~ edu + mcp + age | mcp, data=angst, dist = "negbin", EM = TRUE)
+  szi_26 = zeroinfl(f2_6-1 ~ edu + mcp + age | mcp, data=angst, dist = "negbin", EM = TRUE)
+  szi_27 = zeroinfl(f2_7-1 ~ edu + mcp + age | mcp, data=angst, dist = "negbin", EM = TRUE)
+  szi_28 = zeroinfl(f2_8-1 ~ edu + mcp + age | mcp, data=angst, dist = "negbin", EM = TRUE)
+  szi_29 = zeroinfl(f2_9-1 ~ edu + mcp + age | mcp, data=angst, dist = "negbin", EM = TRUE)
+  stargazer(szi_21, szi_22, szi_23, szi_24, szi_25, szi_26, szi_27, szi_28, type="text", font.size="tiny")
+```
+
+```{r szinb_sep_bus2}
+  szi_30 = zeroinfl(f2_10-1 ~ edu + mcp + age | mcp, data=angst, dist = "negbin", EM = TRUE)
+  szi_31 = zeroinfl(f2_11-1 ~ edu + mcp + age | mcp, data=angst, dist = "negbin", EM = TRUE)
+  szi_32 = zeroinfl(f2_12-1 ~ edu + mcp + age | mcp, data=angst, dist = "negbin", EM = TRUE)
+  szi_33 = zeroinfl(f2_13-1 ~ edu + mcp + age | mcp, data=angst, dist = "negbin", EM = TRUE)
+  szi_34 = zeroinfl(f2_14-1 ~ edu + mcp + age | mcp, data=angst, dist = "negbin", EM = TRUE)
+  szi_35 = zeroinfl(f2_15-1 ~ edu + mcp + age | mcp, data=angst, dist = "negbin", EM = TRUE)
+  # szi_36 = zeroinfl(f2_16-1 ~ edu + mcp + age | mcp, data=angst, dist = "negbin", EM = TRUE) ## manipulation check
+  stargazer(szi_29, szi_30, szi_31, szi_32, szi_33, szi_34, szi_35, type="text", font.size="tiny")
+```
+
+#### OLS
+
+* This is Table A6b.
+
+```{r sols_sep_bus1}
+  sols_21 = lm(f2_1 ~ edu + mcp + age, data=angst)
+  sols_22 = lm(f2_2 ~ edu + mcp + age, data=angst)
+  sols_23 = lm(f2_3 ~ edu + mcp + age, data=angst)
+  sols_24 = lm(f2_4 ~ edu + mcp + age, data=angst)
+  sols_25 = lm(f2_5 ~ edu + mcp + age, data=angst)
+  sols_26 = lm(f2_6 ~ edu + mcp + age, data=angst)
+  sols_27 = lm(f2_7 ~ edu + mcp + age, data=angst)
+  sols_28 = lm(f2_8 ~ edu + mcp + age, data=angst)
+  sols_29 = lm(f2_9 ~ edu + mcp + age, data=angst)
+  stargazer(sols_21, sols_22, sols_23, sols_24, sols_25, sols_26, sols_27, sols_28, type="text", font.size="tiny",  omit.stat=c("f", "ser"))
+```
+
+```{r sols_sep_bus2}
+  sols_30 = lm(f2_10 ~ edu + mcp + age, data=angst)
+  sols_31 = lm(f2_11 ~ edu + mcp + age, data=angst)
+  sols_32 = lm(f2_12 ~ edu + mcp + age, data=angst)
+  sols_33 = lm(f2_13 ~ edu + mcp + age, data=angst)
+  sols_34 = lm(f2_14 ~ edu + mcp + age, data=angst)
+  sols_35 = lm(f2_15 ~ edu + mcp + age, data=angst)
+  # sols_36 = lm(f2_16 ~ edu + mcp + age, data=angst) ## manipulation check
+  stargazer(sols_29, sols_30, sols_31, sols_32, sols_33, sols_34, sols_35, type="text", font.size="tiny",  omit.stat=c("f", "ser"))
+```
+
+### Table A7
+
+```{r zinb_sep_neig}
+  zi_11 = zeroinfl(f1_1-1 ~ edu + mcp + age + fear + ideology + sex + active | mcp, data=angst, dist = "negbin", EM = TRUE)
+  zi_12 = zeroinfl(f1_2-1 ~ edu + mcp + age + fear + ideology + sex + active | mcp, data=angst, dist = "negbin", EM = TRUE)
+  zi_13 = zeroinfl(f1_3-1 ~ edu + mcp + age + fear + ideology + sex + active | mcp, data=angst, dist = "negbin", EM = TRUE)
+  zi_14 = zeroinfl(f1_4-1 ~ edu + mcp + age + fear + ideology + sex + active | mcp, data=angst, dist = "negbin", EM = TRUE)
+  zi_15 = zeroinfl(f1_5-1 ~ edu + mcp + age + fear + ideology + sex + active | mcp, data=angst, dist = "negbin", EM = TRUE)
+  zi_16 = zeroinfl(f1_6-1 ~ edu + mcp + age + fear + ideology + sex + active | mcp, data=angst, dist = "negbin", EM = TRUE)
+  zi_17 = zeroinfl(f1_7-1 ~ edu + mcp + age + fear + ideology + sex + active | mcp, data=angst, dist = "negbin", EM = TRUE)
+  zi_18 = zeroinfl(f1_8-1 ~ edu + mcp + age + fear + ideology + sex + active | mcp, data=angst, dist = "negbin", EM = TRUE)
+  zi_19 = zeroinfl(f1_9-1 ~ edu + mcp + age + fear + ideology + sex + active | mcp, data=angst, dist = "negbin", EM = TRUE)
+  # stargazer(zi_ext, zi_11, zi_12, zi_13, zi_14, zi_15, zi_16, zi_18, zi_19, type="text", font.size="tiny")
+  stargazer(zi_ext, zi_14, zi_15, zi_16, zi_17, zi_18, zi_19, type="text", font.size="tiny")
+```
+
+#### OLS
+
+* This is *not* reported in the article.
+
+```{r ols_sep_neig}
+  ols_11 = lm(f1_1 ~ edu + mcp + age + fear + ideology + sex + active, data=angst)
+  ols_12 = lm(f1_2 ~ edu + mcp + age + fear + ideology + sex + active, data=angst)
+  ols_13 = lm(f1_3 ~ edu + mcp + age + fear + ideology + sex + active, data=angst)
+  ols_14 = lm(f1_4 ~ edu + mcp + age + fear + ideology + sex + active, data=angst)
+  ols_15 = lm(f1_5 ~ edu + mcp + age + fear + ideology + sex + active, data=angst)
+  ols_16 = lm(f1_6 ~ edu + mcp + age + fear + ideology + sex + active, data=angst)
+  ols_17 = lm(f1_7 ~ edu + mcp + age + fear + ideology + sex + active, data=angst)
+  ols_18 = lm(f1_8 ~ edu + mcp + age + fear + ideology + sex + active, data=angst)
+  ols_19 = lm(f1_9 ~ edu + mcp + age + fear + ideology + sex + active, data=angst)
+  # stargazer(ols_ext, ols_11, ols_12, ols_13, ols_14, ols_15, ols_16, ols_18, ols_19, type="text", font.size="tiny")
+  stargazer(ols_ext, ols_14, ols_15, ols_16, ols_17, ols_18, ols_19, type="text", font.size="tiny",  omit.stat=c("f", "ser"))
+```
+
+### Table A8
+
+```{r zinb_sep_bus1}
+  zi_21 = zeroinfl(f2_1-1 ~ edu + mcp + age + fear + ideology + sex + active | mcp, data=angst, dist = "negbin", EM = TRUE)
+  zi_22 = zeroinfl(f2_2-1 ~ edu + mcp + age + fear + ideology + sex + active | mcp, data=angst, dist = "negbin", EM = TRUE)
+  zi_23 = zeroinfl(f2_3-1 ~ edu + mcp + age + fear + ideology + sex + active | mcp, data=angst, dist = "negbin", EM = TRUE)
+  zi_24 = zeroinfl(f2_4-1 ~ edu + mcp + age + fear + ideology + sex + active | mcp, data=angst, dist = "negbin", EM = TRUE)
+  zi_25 = zeroinfl(f2_5-1 ~ edu + mcp + age + fear + ideology + sex + active | mcp, data=angst, dist = "negbin", EM = TRUE)
+  zi_26 = zeroinfl(f2_6-1 ~ edu + mcp + age + fear + ideology + sex + active | mcp, data=angst, dist = "negbin", EM = TRUE)
+  zi_27 = zeroinfl(f2_7-1 ~ edu + mcp + age + fear + ideology + sex + active | mcp, data=angst, dist = "negbin", EM = TRUE)
+  zi_28 = zeroinfl(f2_8-1 ~ edu + mcp + age + fear + ideology + sex + active | mcp, data=angst, dist = "negbin", EM = TRUE)
+  zi_29 = zeroinfl(f2_9-1 ~ edu + mcp + age + fear + ideology + sex + active | mcp, data=angst, dist = "negbin", EM = TRUE)
+  stargazer(zi_ext, zi_21, zi_22, zi_23, zi_24, zi_25, zi_26, zi_27, zi_28, type="text", font.size="tiny")
+```
+
+```{r zinb_sep_bus2}
+  zi_30 = zeroinfl(f2_10-1 ~ edu + mcp + age + fear + ideology + sex + active | mcp, data=angst, dist = "negbin", EM = TRUE)
+  zi_31 = zeroinfl(f2_11-1 ~ edu + mcp + age + fear + ideology + sex + active | mcp, data=angst, dist = "negbin", EM = TRUE)
+  zi_32 = zeroinfl(f2_12-1 ~ edu + mcp + age + fear + ideology + sex + active | mcp, data=angst, dist = "negbin", EM = TRUE)
+  zi_33 = zeroinfl(f2_13-1 ~ edu + mcp + age + fear + ideology + sex + active | mcp, data=angst, dist = "negbin", EM = TRUE)
+  zi_34 = zeroinfl(f2_14-1 ~ edu + mcp + age + fear + ideology + sex + active | mcp, data=angst, dist = "negbin", EM = TRUE)
+  zi_35 = zeroinfl(f2_15-1 ~ edu + mcp + age + fear + ideology + sex + active | mcp, data=angst, dist = "negbin", EM = TRUE)
+  # zi_36 = zeroinfl(f2_16-1 ~ edu + mcp + age + fear + ideology + sex + active | mcp, data=angst, dist = "negbin", EM = TRUE) ## manipulation check
+  stargazer(zi_ext, zi_29, zi_30, zi_31, zi_32, zi_33, zi_34, zi_35, type="text", font.size="tiny")
+```
+
+#### OLS
+
+* This is *not* reported in the article.
+
+
+```{r ols_sep_bus1}
+  ols_21 = lm(f2_1 ~ edu + mcp + age + fear + ideology + sex + active, data=angst)
+  ols_22 = lm(f2_2 ~ edu + mcp + age + fear + ideology + sex + active, data=angst)
+  ols_23 = lm(f2_3 ~ edu + mcp + age + fear + ideology + sex + active, data=angst)
+  ols_24 = lm(f2_4 ~ edu + mcp + age + fear + ideology + sex + active, data=angst)
+  ols_25 = lm(f2_5 ~ edu + mcp + age + fear + ideology + sex + active, data=angst)
+  ols_26 = lm(f2_6 ~ edu + mcp + age + fear + ideology + sex + active, data=angst)
+  ols_27 = lm(f2_7 ~ edu + mcp + age + fear + ideology + sex + active, data=angst)
+  ols_28 = lm(f2_8 ~ edu + mcp + age + fear + ideology + sex + active, data=angst)
+  ols_29 = lm(f2_9 ~ edu + mcp + age + fear + ideology + sex + active, data=angst)
+  stargazer(ols_ext, ols_21, ols_22, ols_23, ols_24, ols_25, ols_26, ols_27, ols_28, type="text", font.size="tiny",  omit.stat=c("f", "ser"))
+```
+
+```{r ols_sep_bus2}
+  ols_30 = lm(f2_10 ~ edu + mcp + age + fear + ideology + sex + active, data=angst)
+  ols_31 = lm(f2_11 ~ edu + mcp + age + fear + ideology + sex + active, data=angst)
+  ols_32 = lm(f2_12 ~ edu + mcp + age + fear + ideology + sex + active, data=angst)
+  ols_33 = lm(f2_13 ~ edu + mcp + age + fear + ideology + sex + active, data=angst)
+  ols_34 = lm(f2_14 ~ edu + mcp + age + fear + ideology + sex + active, data=angst)
+  ols_35 = lm(f2_15 ~ edu + mcp + age + fear + ideology + sex + active, data=angst)
+  # ols_36 = lm(f2_16 ~ edu + mcp + age + fear + ideology + sex + active, data=angst) ## manipulation check
+  stargazer(ols_ext, ols_29, ols_30, ols_31, ols_32, ols_33, ols_34, ols_35, type="text", font.size="tiny",  omit.stat=c("f", "ser"))
+```
+
+## OLS model with Factor-Loadings index
+
+OLS models for each variable (*combi* for the additive index, *combi_facto* for the factor-scores-based index). These results are *not* reported in the article, but the correlation is.
+
+```{r, fig.width=4, fig.height=3}
+  angst$combi_facto = rowSums(cbind((angst$f1_1-1)*0.59, (angst$f1_2-1)*0.64, (angst$f1_3-1)*0.54, (angst$f1_4-1)*0.57, (angst$f1_5-1)*0.67, (angst$f1_6-1)*0.67, (angst$f1_7-1)*0.67, (angst$f1_8-1)*0.67, (angst$f1_9-1)*0.67, (angst$f2_1-1)*0.70, (angst$f2_2-1)*0.71, (angst$f2_3-1)*0.69, (angst$f2_4-1)*0.75, (angst$f2_5-1)*0.79, (angst$f2_6-1)*0.65, (angst$f2_7-1)*0.79, (angst$f2_8-1)*0.82, (angst$f2_9-1)*0.81, (angst$f2_10-1)*0.72, (angst$f2_11-1)*0.80, (angst$f2_12-1)*0.65, (angst$f2_13-1)*0.79, (angst$f2_14-1)*0.77, (angst$f2_15-1)*0.71), na.rm=TRUE)
+  plot(angst$combi, angst$combi_facto, ylab="Unweighted", xlab="Weighted with Factor Loadings")
+  ols_base_fl = lm(combi_facto ~ edu + mcp + age, data=angst)
+  ols_ext_fl  = lm(combi_facto ~ edu + mcp + age + fear + ideology + sex + active, data=angst)
+  stargazer(ols_base, ols_base_fl, ols_ext, ols_ext_fl, type="text", font.size="tiny", single.row=TRUE, ci=FALSE,  omit.stat=c("f", "ser"))
+```
+
+```{r density_plot}
+  plot(density(angst$combi_facto, bw=3), col="#CC6677", bty="n", main="Kernel Densities", xlim=c(0, 120))
+  lines(density(angst$combi, bw=3), col="#4477AA")
+  legend("topright", col=c("#4477AA", "#CC6677"), lwd=1.5, legend=c("additive index", "factor-scores index"), bty="n")
+```
+
+The correlation between the 'combi' and the factor-loading-weighted index is `r round(cor(angst$combi, angst$combi_facto), 3)`.
+
+All analyses run with `r R.Version()$version.string`.
