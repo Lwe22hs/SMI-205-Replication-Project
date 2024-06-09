@@ -16,6 +16,7 @@ Ruedin paper (2020) examines how individuals in Europe are uneasy and feel threa
 
 ## Project Documentation
 README.md this file
+
 Pre-Registration Form.Rmd - This document extension
 
 ## Data Preparation
@@ -36,7 +37,9 @@ Pre-Registration Form.Rmd - This document extension
 # Scripts
 
 Angst.1.RData - Original Data
+
 Analysis-threat-prx.Rmd - Original code
+
 SMI205_Assessment2.Rmd - Replication study Extension
 
 # Original replication documentation
